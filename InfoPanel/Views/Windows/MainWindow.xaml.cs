@@ -1,7 +1,6 @@
 using System;
 using System.ComponentModel;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
@@ -93,12 +92,7 @@ namespace InfoPanel.Views.Windows
             _snackbarService.SetSnackbarPresenter(RootSnackbar);
             contentDialogService.SetDialogHost(RootContentDialog);
 
-            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3);
-
-            if (version != null)
-            {
-                RootTitleBar.Title = $"InfoPanel - v{version}";
-            }
+            RootTitleBar.Title = $"InfoPanel - v{VersionHelper.AppVersion}";
 
             Loaded += MainWindow_Loaded;
             StateChanged += MainWindow_StateChanged;
@@ -325,6 +319,10 @@ namespace InfoPanel.Views.Windows
                     case "updates":
                         RestoreWindow();
                         Navigate(typeof(Pages.UpdatesPage));
+                        break;
+                    case "logs":
+                        RestoreWindow();
+                        Navigate(typeof(Pages.LogsPage));
                         break;
                     case "about":
                         RestoreWindow();
