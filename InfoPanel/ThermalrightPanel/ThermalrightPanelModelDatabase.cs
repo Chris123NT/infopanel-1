@@ -82,6 +82,7 @@ namespace InfoPanel.ThermalrightPanel
         public const byte RAINBOW_360_SUB_BYTE = 0x02; // Rainbow Vision 360
         public const byte LEVITA_360_SUB_BYTE  = 0x03; // Levita Vision 360
         public const string IDENTIFIER_V4 = "SSCRM-V4"; // TL-M10 Vision (1920x462)
+        public const string IDENTIFIER_SPI_V2 = "SPISCRM-V2"; // Elite Vision 360 ARGB Black (SPI 320x320, RGB565 LE)
 
         public static readonly Dictionary<ThermalrightPanelModel, ThermalrightPanelModelInfo> Models = new()
         {
@@ -460,6 +461,24 @@ namespace InfoPanel.ThermalrightPanel
                 ProductId = THERMALRIGHT_PRODUCT_ID,
                 ProtocolType = ThermalrightProtocolType.ChiZhu,
                 PixelFormat = ThermalrightPixelFormat.Rgb565BigEndian
+            },
+            // SPISCRM-V2 identifier: Elite Vision 360 ARGB Black (and likely other SPI-driven 320x320 panels)
+            // Reports PM=0x20 / SUB=0x20 at the same offsets as the generic ChiZhu 320x320, but is NOT
+            // big-endian — every other SPI panel in our database is RGB565 little-endian, and the PM=0x20/BE
+            // entry produces a stuck Thermalright boot logo on this device.
+            [ThermalrightPanelModel.EliteVision360] = new ThermalrightPanelModelInfo
+            {
+                Model = ThermalrightPanelModel.EliteVision360,
+                Name = "Elite Vision 360 ARGB",
+                DeviceIdentifier = IDENTIFIER_SPI_V2,
+                Width = 320,
+                Height = 320,
+                RenderWidth = 320,
+                RenderHeight = 320,
+                VendorId = THERMALRIGHT_VENDOR_ID,
+                ProductId = THERMALRIGHT_PRODUCT_ID,
+                ProtocolType = ThermalrightProtocolType.ChiZhu,
+                PixelFormat = ThermalrightPixelFormat.Rgb565
             },
             [ThermalrightPanelModel.EliteVisionScsi] = new ThermalrightPanelModelInfo
             {
