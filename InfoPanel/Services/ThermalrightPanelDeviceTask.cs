@@ -122,8 +122,10 @@ namespace InfoPanel.Services
 
             // Bytes 16-55: Zero padding (already zeroed)
 
-            // Bytes 56-59: Command repeated
-            BitConverter.GetBytes(cmd).CopyTo(header, 56);
+            // Bytes 56-59: Frame type (SSCRM_CMD_TYPE_PICTURE = 2). Constant regardless
+            // of pixel format — TRCC writes 2 here even when the data-format byte at offset
+            // 4 is 3 (RGB565). Without this, RGB565 panels (PM=0x20 / SPISCRM-V2) reject frames.
+            BitConverter.GetBytes(0x02).CopyTo(header, 56);
 
             // Bytes 60-63: Data size (little-endian)
             BitConverter.GetBytes(dataSize).CopyTo(header, 60);
@@ -251,10 +253,7 @@ namespace InfoPanel.Services
                         dimmed = ApplyBrightness(resizedBitmap);
                         convertBitmap = dimmed;
                     }
-                    using var rgb565Bitmap = convertBitmap.Copy(SKColorType.Rgb565);
-                    var bytes = rgb565Bitmap.Bytes;
-                    if (bigEndian) SwapRgb565Endianness(bytes);
-                    return bytes;
+                    return ConvertRgba8888ToRgb565(convertBitmap, bigEndian);
                 }
                 finally
                 {
@@ -342,13 +341,53 @@ namespace InfoPanel.Services
         }
 
         /// <summary>
-        /// Byte-swaps each 16-bit pixel in-place for big-endian RGB565.
-        /// Required for 320x320 panels.
+        /// Converts an RGBA8888 bitmap to RGB565 by truncation (no dithering).
+        /// SkiaSharp's Copy(SKColorType.Rgb565) applies ordered dithering, which produces
+        /// a fine mesh pattern visible on smooth gradients. TRCC's reference implementation
+        /// (FormCZTV.ImageTo565) drops the low bits with no dithering, so we match that.
+        /// Reads the bitmap row-by-row honoring RowBytes to avoid any row padding bleed.
         /// </summary>
-        private static void SwapRgb565Endianness(byte[] data)
+        private static byte[] ConvertRgba8888ToRgb565(SKBitmap bitmap, bool bigEndian)
         {
-            for (int i = 0; i < data.Length - 1; i += 2)
-                (data[i], data[i + 1]) = (data[i + 1], data[i]);
+            int width = bitmap.Width;
+            int height = bitmap.Height;
+            int srcRowBytes = bitmap.RowBytes;
+            byte[] dst = new byte[width * height * 2];
+
+            unsafe
+            {
+                byte* srcBase = (byte*)bitmap.GetPixels().ToPointer();
+                fixed (byte* dstBase = dst)
+                {
+                    for (int y = 0; y < height; y++)
+                    {
+                        byte* srcRow = srcBase + y * srcRowBytes;
+                        byte* dstRow = dstBase + y * width * 2;
+                        for (int x = 0; x < width; x++)
+                        {
+                            byte r = srcRow[x * 4];      // Rgba8888: R, G, B, A
+                            byte g = srcRow[x * 4 + 1];
+                            byte b = srcRow[x * 4 + 2];
+
+                            // Truncate to 5/6/5 — exact match to TRCC FormCZTV.ImageTo565
+                            byte hi = (byte)((r & 0xF8) | (g >> 5));        // RRRRR_GGG
+                            byte lo = (byte)(((g & 0x1C) << 3) | (b >> 3)); // GGG_BBBBB
+
+                            if (bigEndian)
+                            {
+                                dstRow[x * 2]     = hi;
+                                dstRow[x * 2 + 1] = lo;
+                            }
+                            else
+                            {
+                                dstRow[x * 2]     = lo;
+                                dstRow[x * 2 + 1] = hi;
+                            }
+                        }
+                    }
+                }
+            }
+            return dst;
         }
 
         private byte[]? _blackFrame;
@@ -723,7 +762,10 @@ namespace InfoPanel.Services
                 string? deviceIdentifier = null;
                 if (bytesRead >= 12)
                 {
-                    deviceIdentifier = System.Text.Encoding.ASCII.GetString(responseBuffer, 4, 8).TrimEnd('\0');
+                    // Identifier zone is bytes 4..19 (flags byte is at offset 20). Length varies:
+                    // SSCRM-V1/V3/V4 = 8 chars, SPISCRM-V2 = 10 chars, all null-padded.
+                    int idLen = Math.Min(16, bytesRead - 4);
+                    deviceIdentifier = System.Text.Encoding.ASCII.GetString(responseBuffer, 4, idLen).TrimEnd('\0');
                     Logger.Information("ThermalrightPanelDevice {Device}: Device identifier: {Id}", _device, deviceIdentifier);
 
                     if (!string.IsNullOrEmpty(deviceIdentifier))

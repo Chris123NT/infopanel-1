@@ -462,14 +462,15 @@ namespace InfoPanel.ThermalrightPanel
                 ProtocolType = ThermalrightProtocolType.ChiZhu,
                 PixelFormat = ThermalrightPixelFormat.Rgb565BigEndian
             },
-            // SPISCRM-V2 identifier: Elite Vision 360 ARGB Black (and likely other SPI-driven 320x320 panels)
-            // Reports PM=0x20 / SUB=0x20 at the same offsets as the generic ChiZhu 320x320, but is NOT
-            // big-endian — every other SPI panel in our database is RGB565 little-endian, and the PM=0x20/BE
-            // entry produces a stuck Thermalright boot logo on this device.
+            // SPISCRM-V2 identifier: Elite Vision 360 ARGB Black, Frozen Warframe PRO 360, etc.
+            // PM=0x20 / SUB=0x20. TRCC FormCZTV.cs maps PM=32 to myDeviceMode=4, which
+            // sends RGB565 big-endian frames (cmd=3 at offset 4) and packs RGB565 with
+            // high byte first (RRRRRGGG / GGGBBBBB). The matching frame-type byte at
+            // offset 56 is always 2 (SSCRM_CMD_TYPE_PICTURE) — see BuildDisplayHeader.
             [ThermalrightPanelModel.EliteVision360] = new ThermalrightPanelModelInfo
             {
                 Model = ThermalrightPanelModel.EliteVision360,
-                Name = "Elite Vision 360 ARGB",
+                Name = "Thermalright 320x320 (SPISCRM-V2)",
                 DeviceIdentifier = IDENTIFIER_SPI_V2,
                 Width = 320,
                 Height = 320,
@@ -478,7 +479,7 @@ namespace InfoPanel.ThermalrightPanel
                 VendorId = THERMALRIGHT_VENDOR_ID,
                 ProductId = THERMALRIGHT_PRODUCT_ID,
                 ProtocolType = ThermalrightProtocolType.ChiZhu,
-                PixelFormat = ThermalrightPixelFormat.Rgb565
+                PixelFormat = ThermalrightPixelFormat.Rgb565BigEndian
             },
             [ThermalrightPanelModel.EliteVisionScsi] = new ThermalrightPanelModelInfo
             {
