@@ -82,6 +82,7 @@ namespace InfoPanel.ThermalrightPanel
         public const byte RAINBOW_360_SUB_BYTE = 0x02; // Rainbow Vision 360
         public const byte LEVITA_360_SUB_BYTE  = 0x03; // Levita Vision 360
         public const string IDENTIFIER_V4 = "SSCRM-V4"; // TL-M10 Vision (1920x462)
+        public const string IDENTIFIER_SPI_V2 = "SPISCRM-V2"; // Elite Vision 360 ARGB Black (SPI 320x320, RGB565 LE)
 
         public static readonly Dictionary<ThermalrightPanelModel, ThermalrightPanelModelInfo> Models = new()
         {
@@ -452,6 +453,25 @@ namespace InfoPanel.ThermalrightPanel
                 Model = ThermalrightPanelModel.ChiZhuVision320x320,
                 Name = "ChiZhu Vision 320x320",
                 DeviceIdentifier = "",  // Identified by VID/PID + PM byte at offset 24 of ChiZhu bulk response
+                Width = 320,
+                Height = 320,
+                RenderWidth = 320,
+                RenderHeight = 320,
+                VendorId = THERMALRIGHT_VENDOR_ID,
+                ProductId = THERMALRIGHT_PRODUCT_ID,
+                ProtocolType = ThermalrightProtocolType.ChiZhu,
+                PixelFormat = ThermalrightPixelFormat.Rgb565BigEndian
+            },
+            // SPISCRM-V2 identifier: Elite Vision 360 ARGB Black, Frozen Warframe PRO 360, etc.
+            // PM=0x20 / SUB=0x20. TRCC FormCZTV.cs maps PM=32 to myDeviceMode=4, which
+            // sends RGB565 big-endian frames (cmd=3 at offset 4) and packs RGB565 with
+            // high byte first (RRRRRGGG / GGGBBBBB). The matching frame-type byte at
+            // offset 56 is always 2 (SSCRM_CMD_TYPE_PICTURE) — see BuildDisplayHeader.
+            [ThermalrightPanelModel.EliteVision360] = new ThermalrightPanelModelInfo
+            {
+                Model = ThermalrightPanelModel.EliteVision360,
+                Name = "Thermalright 320x320 (SPISCRM-V2)",
+                DeviceIdentifier = IDENTIFIER_SPI_V2,
                 Width = 320,
                 Height = 320,
                 RenderWidth = 320,

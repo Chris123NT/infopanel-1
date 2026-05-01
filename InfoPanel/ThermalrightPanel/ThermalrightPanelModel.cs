@@ -53,6 +53,10 @@ namespace InfoPanel.ThermalrightPanel
         // ChiZhu bulk (87AD:70DB) PM=0x20 variant — 320x320, RGB565
         ChiZhuVision320x320,
 
+        // ChiZhu bulk (87AD:70DB) responding with SPISCRM-V2 identifier — Elite Vision 360 ARGB Black
+        // SPI-driven 320x320 panel, RGB565 little-endian (unlike the generic PM=0x20 entry which is BE)
+        EliteVision360,
+
         // SCSI pass-through — resolution detected at runtime from poll response
         EliteVisionScsi,      // VID 0x0402 / PID 0x3922 — Frozen Warframe, Elite Vision 360
         ThermalrightScsi,     // VID 0x87CD / PID 0x70DB — Frozen Horizon Pro, Core Vision, Elite Vision, Wonder Vision
