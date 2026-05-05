@@ -87,9 +87,9 @@ namespace InfoPanel.Services
             while (!token.IsCancellationRequested)
             {
                 var stopwatch = Stopwatch.StartNew();
-                var rgbData = GenerateRgb888Buffer();
+                var bgrData = GenerateBgr888Buffer();
 
-                vmaxDevice.SendRgb888Frame(rgbData);
+                vmaxDevice.SendRgb888Frame(bgrData);
                 vmaxDevice.SetScreenSwitch(_device.ScreenSwitch);
 
                 fpsCounter.Update(stopwatch.ElapsedMilliseconds);
@@ -102,7 +102,7 @@ namespace InfoPanel.Services
             }
         }
 
-        private byte[] GenerateRgb888Buffer()
+        private byte[] GenerateBgr888Buffer()
         {
             if (ConfigModel.Instance.GetProfile(_device.ProfileGuid) is Profile profile)
             {
@@ -116,7 +116,7 @@ namespace InfoPanel.Services
                 try
                 {
                     normalized = ApplyBrightness(resizedBitmap);
-                    return ToRgb888(normalized);
+                    return ToBgr888(normalized);
                 }
                 finally
                 {
@@ -127,7 +127,7 @@ namespace InfoPanel.Services
             return GenerateBlackRgb888();
         }
 
-        private static byte[] ToRgb888(SKBitmap bitmap)
+        private static byte[] ToBgr888(SKBitmap bitmap)
         {
             var output = new byte[bitmap.Width * bitmap.Height * 3];
             int offset = 0;
@@ -136,9 +136,9 @@ namespace InfoPanel.Services
                 for (int x = 0; x < bitmap.Width; x++)
                 {
                     var color = bitmap.GetPixel(x, y);
-                    output[offset++] = color.Red;
-                    output[offset++] = color.Green;
                     output[offset++] = color.Blue;
+                    output[offset++] = color.Green;
+                    output[offset++] = color.Red;
                 }
             }
             return output;
