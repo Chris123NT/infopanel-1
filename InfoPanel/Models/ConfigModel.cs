@@ -273,7 +273,6 @@ namespace InfoPanel
         public void Initialize()
         {
             LoadProfiles();
-            AutoDiscoverVmaxPanelDevices();
 
             if (SharedModel.Instance.SelectedProfile is Profile p)
                 _currentSaveStateProfileGuid = p.Guid;
@@ -281,77 +280,6 @@ namespace InfoPanel
                 StartAutosaveTimer();
             if (Settings.ProgramSpecificPanelsEnabled)
                 _ = ForegroundAppMonitor.Instance.StartAsync();
-        }
-
-        private void AutoDiscoverVmaxPanelDevices()
-        {
-            try
-            {
-                var discoveredDevices = VmaxPanelHelper.ScanDevices();
-                Logger.Information("VmaxPanel Auto Discovery: Found {Count} device(s)", discoveredDevices.Count);
-
-                var registryDevice = discoveredDevices.FirstOrDefault(d =>
-                    d.DeviceId.StartsWith($@"USB\VID_{VmaxPanelModelDatabase.VMAX_VENDOR_ID:X4}&PID_{VmaxPanelModelDatabase.VMAX_PRODUCT_ID_46INCH:X4}", StringComparison.OrdinalIgnoreCase));
-
-                var settingsChanged = false;
-
-                if (registryDevice != null)
-                {
-                    var duplicateDevices = Settings.VmaxPanelDevices
-                        .Where(d => d.Model == registryDevice.Model
-                            && !string.Equals(d.DeviceId, registryDevice.DeviceId, StringComparison.OrdinalIgnoreCase))
-                        .ToList();
-
-                    foreach (var duplicateDevice in duplicateDevices)
-                    {
-                        Settings.VmaxPanelDevices.Remove(duplicateDevice);
-                        settingsChanged = true;
-                        Logger.Information("VmaxPanel Auto Discovery: Removed duplicate '{DeviceId}'", duplicateDevice.DeviceId);
-                    }
-                }
-
-                foreach (var discoveredDevice in discoveredDevices)
-                {
-                    var device = Settings.VmaxPanelDevices.FirstOrDefault(d =>
-                        d.IsMatching(discoveredDevice.DeviceId, discoveredDevice.DeviceLocation, discoveredDevice.Model));
-
-                    if (device != null)
-                    {
-                        device.DeviceLocation = discoveredDevice.DeviceLocation;
-                        if (device.ModelInfo != null)
-                        {
-                            device.RuntimeProperties.Name = device.ModelInfo.Name;
-                        }
-                        continue;
-                    }
-
-                    var newDevice = new VmaxPanelDevice
-                    {
-                        DeviceId = discoveredDevice.DeviceId,
-                        DeviceLocation = discoveredDevice.DeviceLocation,
-                        Model = discoveredDevice.Model,
-                        ProfileGuid = Profiles.FirstOrDefault()?.Guid ?? Guid.Empty,
-                    };
-
-                    if (discoveredDevice.ModelInfo != null)
-                    {
-                        newDevice.RuntimeProperties.Name = discoveredDevice.ModelInfo.Name;
-                    }
-
-                    Settings.VmaxPanelDevices.Add(newDevice);
-                    settingsChanged = true;
-                    Logger.Information("VmaxPanel Auto Discovery: Added '{DeviceId}'", discoveredDevice.DeviceId);
-                }
-
-                if (settingsChanged)
-                {
-                    _ = SaveSettingsAsync();
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Warning(ex, "VmaxPanel Auto Discovery failed");
-            }
         }
 
         public void AccessSettings(Action<Settings> action)

@@ -96,7 +96,6 @@ namespace InfoPanel.VmaxPanel
         private HidStream? _hidStream;
         private DateTime _lastStreamingStatusPolled = DateTime.MinValue;
         private byte[]? _frameBuffer;
-        private bool _loggedFirstFrame;
         private bool _hasSentFrame;
         private bool? _currentScreenSwitch;
         private bool _disposed;
@@ -333,18 +332,6 @@ namespace InfoPanel.VmaxPanel
                 }
 
                 offset += bytesWritten;
-            }
-
-            if (!_loggedFirstFrame)
-            {
-                _loggedFirstFrame = true;
-                Logger.Information(
-                    "VmaxUsbDevice: First RGB888 frame sent. Payload={PayloadLength}, Frame={FrameLength}, Prefix={Prefix}, FirstPixels={FirstPixels}, Suffix={Suffix}",
-                    rgbDataLength,
-                    _frameBuffer.Length,
-                    BitConverter.ToString(_frameBuffer.Take(FramePrefix.Length).ToArray()),
-                    BitConverter.ToString(rgbData.Take(Math.Min(24, rgbDataLength)).ToArray()),
-                    BitConverter.ToString(_frameBuffer.Skip(_frameBuffer.Length - FrameSuffix.Length).ToArray()));
             }
 
             _hasSentFrame = true;

@@ -50,7 +50,6 @@ namespace InfoPanel.Services
                 try
                 {
                     Logger.Information("ThermaltakeDevice {Device}: Opening (attempt {Retry})", _device, retryCount + 1);
-
                     hidDevice = ThermaltakeHidDevice.Open(modelInfo.VendorId, modelInfo.ProductId);
 
                     if (hidDevice == null)
