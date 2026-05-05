@@ -6,8 +6,10 @@ using InfoPanel.VmaxPanel;
 using Serilog;
 using SkiaSharp;
 using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 
 namespace InfoPanel.Services
@@ -81,84 +83,196 @@ namespace InfoPanel.Services
 
         private async Task RunRenderSendLoop(VmaxUsbDevice vmaxDevice, CancellationToken token)
         {
-            FpsCounter fpsCounter = new(10);
+            using var renderCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            var renderToken = renderCts.Token;
+            var frames = Channel.CreateBounded<RenderedFrame>(new BoundedChannelOptions(2)
+            {
+                SingleReader = true,
+                SingleWriter = true,
+                FullMode = BoundedChannelFullMode.Wait
+            });
+
+            var renderTask = Task.Run(async () =>
+            {
+                try
+                {
+                    while (!renderToken.IsCancellationRequested)
+                    {
+                        var frame = GenerateBgr888Frame();
+                        try
+                        {
+                            await frames.Writer.WriteAsync(frame, renderToken);
+                        }
+                        catch
+                        {
+                            ReturnFrame(frame);
+                            throw;
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    frames.Writer.TryComplete(ex);
+                    return;
+                }
+
+                frames.Writer.TryComplete();
+            }, System.Threading.CancellationToken.None);
+
+            FpsCounter fpsCounter = new(30);
+            var diagnosticsStopwatch = Stopwatch.StartNew();
+            var diagnosticFrames = 0;
+            long diagnosticFrameMs = 0;
+            long diagnosticRenderMs = 0;
+            long diagnosticResizeMs = 0;
+            long diagnosticConvertMs = 0;
+            long diagnosticSendMs = 0;
+            long diagnosticScreenSwitchMs = 0;
+            long diagnosticDelayMs = 0;
             _device.UpdateRuntimeProperties(isRunning: true, errorMessage: string.Empty);
 
-            while (!token.IsCancellationRequested)
+            try
             {
-                var stopwatch = Stopwatch.StartNew();
-                var bgrData = GenerateBgr888Buffer();
+                await foreach (var frame in frames.Reader.ReadAllAsync(token))
+                {
+                    try
+                    {
+                        var stopwatch = Stopwatch.StartNew();
 
-                vmaxDevice.SendRgb888Frame(bgrData);
-                vmaxDevice.SetScreenSwitch(_device.ScreenSwitch);
+                        var sendStopwatch = Stopwatch.StartNew();
+                        vmaxDevice.SendRgb888Frame(frame.Buffer, frame.Length);
+                        var sendMs = sendStopwatch.ElapsedMilliseconds;
 
-                fpsCounter.Update(stopwatch.ElapsedMilliseconds);
-                _device.UpdateRuntimeProperties(frameRate: fpsCounter.FramesPerSecond, frameTime: fpsCounter.FrameTime);
+                        var screenSwitchStopwatch = Stopwatch.StartNew();
+                        vmaxDevice.SetScreenSwitch(_device.ScreenSwitch);
+                        var screenSwitchMs = screenSwitchStopwatch.ElapsedMilliseconds;
 
-                var targetFrameTime = 1000 / Math.Max(1, Math.Min(_device.TargetFrameRate, 5));
-                var delay = targetFrameTime - (int)stopwatch.ElapsedMilliseconds;
-                if (delay > 0)
-                    await Task.Delay(delay, token);
+                        fpsCounter.Update(stopwatch.ElapsedMilliseconds);
+                        _device.UpdateRuntimeProperties(frameRate: fpsCounter.FramesPerSecond, frameTime: fpsCounter.FrameTime);
+
+                        var targetFrameTime = 1000 / Math.Max(1, Math.Min(_device.TargetFrameRate, 30));
+                        var delay = targetFrameTime - (int)stopwatch.ElapsedMilliseconds;
+
+                        diagnosticFrames++;
+                        diagnosticFrameMs += stopwatch.ElapsedMilliseconds;
+                        diagnosticRenderMs += frame.RenderMs;
+                        diagnosticResizeMs += frame.ResizeMs;
+                        diagnosticConvertMs += frame.ConvertMs;
+                        diagnosticSendMs += sendMs;
+                        diagnosticScreenSwitchMs += screenSwitchMs;
+                        diagnosticDelayMs += Math.Max(0, delay);
+
+                        if (diagnosticsStopwatch.ElapsedMilliseconds >= 1000 && diagnosticFrames > 0)
+                        {
+                            Logger.Information(
+                                "VmaxPanelDevice perf: target={TargetFps}fps actual={ActualFps}fps frame={FrameMs:F1}ms render={RenderMs:F1}ms resize={ResizeMs:F1}ms convert={ConvertMs:F1}ms usbWrite={UsbWriteMs:F1}ms screenSwitch={ScreenSwitchMs:F1}ms delay={DelayMs:F1}ms payload={PayloadBytes}",
+                                _device.TargetFrameRate,
+                                fpsCounter.FramesPerSecond,
+                                (double)diagnosticFrameMs / diagnosticFrames,
+                                (double)diagnosticRenderMs / diagnosticFrames,
+                                (double)diagnosticResizeMs / diagnosticFrames,
+                                (double)diagnosticConvertMs / diagnosticFrames,
+                                (double)diagnosticSendMs / diagnosticFrames,
+                                (double)diagnosticScreenSwitchMs / diagnosticFrames,
+                                (double)diagnosticDelayMs / diagnosticFrames,
+                                frame.Length);
+
+                            diagnosticsStopwatch.Restart();
+                            diagnosticFrames = 0;
+                            diagnosticFrameMs = 0;
+                            diagnosticRenderMs = 0;
+                            diagnosticResizeMs = 0;
+                            diagnosticConvertMs = 0;
+                            diagnosticSendMs = 0;
+                            diagnosticScreenSwitchMs = 0;
+                            diagnosticDelayMs = 0;
+                        }
+
+                        if (delay > 0)
+                            await Task.Delay(delay, token);
+                    }
+                    finally
+                    {
+                        ReturnFrame(frame);
+                    }
+                }
+            }
+            finally
+            {
+                renderCts.Cancel();
+                while (frames.Reader.TryRead(out var pendingFrame))
+                    ReturnFrame(pendingFrame);
+
+                try
+                {
+                    await renderTask;
+                }
+                catch (OperationCanceledException)
+                {
+                }
             }
         }
 
-        private byte[] GenerateBgr888Buffer()
+        private static void ReturnFrame(RenderedFrame frame)
+        {
+            if (frame.ReturnToPool)
+                ArrayPool<byte>.Shared.Return(frame.Buffer);
+        }
+
+        private RenderedFrame GenerateBgr888Frame()
         {
             if (ConfigModel.Instance.GetProfile(_device.ProfileGuid) is Profile profile)
             {
+                var renderStopwatch = Stopwatch.StartNew();
                 using var bitmap = PanelDrawTask.RenderSK(profile, false,
                     colorType: SKColorType.Rgba8888,
                     alphaType: SKAlphaType.Opaque);
+                var renderMs = renderStopwatch.ElapsedMilliseconds;
 
+                var resizeStopwatch = Stopwatch.StartNew();
                 using var resizedBitmap = SKBitmapExtensions.EnsureBitmapSize(bitmap, _panelWidth, _panelHeight, _device.Rotation);
+                var resizeMs = resizeStopwatch.ElapsedMilliseconds;
 
-                SKBitmap? normalized = null;
-                try
-                {
-                    normalized = ApplyBrightness(resizedBitmap);
-                    return ToBgr888(normalized);
-                }
-                finally
-                {
-                    normalized?.Dispose();
-                }
+                var convertStopwatch = Stopwatch.StartNew();
+                var length = resizedBitmap.Width * resizedBitmap.Height * 3;
+                var output = ArrayPool<byte>.Shared.Rent(length);
+                ToBgr888(resizedBitmap, output, _device.Brightness);
+                var convertMs = convertStopwatch.ElapsedMilliseconds;
+                return new RenderedFrame(output, length, renderMs, resizeMs, convertMs);
             }
 
-            return GenerateBlackRgb888();
+            var blackFrame = GenerateBlackRgb888();
+            return new RenderedFrame(blackFrame, blackFrame.Length, 0, 0, 0, ReturnToPool: false);
         }
 
-        private static byte[] ToBgr888(SKBitmap bitmap)
+        private static void ToBgr888(SKBitmap bitmap, byte[] output, int brightness)
         {
-            var output = new byte[bitmap.Width * bitmap.Height * 3];
+            var pixels = bitmap.GetPixelSpan();
+            var srcStride = bitmap.RowBytes;
+            var scale = Math.Clamp(brightness, 0, 99);
             int offset = 0;
-            for (int y = 0; y < bitmap.Height; y++)
+
+            unsafe
             {
-                for (int x = 0; x < bitmap.Width; x++)
+                fixed (byte* srcBase = pixels)
+                fixed (byte* dstBase = output)
                 {
-                    var color = bitmap.GetPixel(x, y);
-                    output[offset++] = color.Blue;
-                    output[offset++] = color.Green;
-                    output[offset++] = color.Red;
+                    for (int y = 0; y < bitmap.Height; y++)
+                    {
+                        byte* srcRow = srcBase + y * srcStride;
+                        for (int x = 0; x < bitmap.Width; x++)
+                        {
+                            int si = x * 4;
+                            dstBase[offset++] = (byte)(srcRow[si + 2] * scale / 100);
+                            dstBase[offset++] = (byte)(srcRow[si + 1] * scale / 100);
+                            dstBase[offset++] = (byte)(srcRow[si + 0] * scale / 100);
+                        }
+                    }
                 }
             }
-            return output;
-        }
-
-        private SKBitmap ApplyBrightness(SKBitmap source)
-        {
-            float scale = Math.Clamp(_device.Brightness, 0, 99) / 100f;
-            var result = new SKBitmap(source.Width, source.Height, source.ColorType, source.AlphaType);
-            using var canvas = new SKCanvas(result);
-            using var paint = new SKPaint();
-            paint.ColorFilter = SKColorFilter.CreateColorMatrix(
-            [
-                scale, 0,     0,     0, 0,
-                0,     scale, 0,     0, 0,
-                0,     0,     scale, 0, 0,
-                0,     0,     0,     1, 0
-            ]);
-            canvas.DrawBitmap(source, 0, 0, paint);
-            return result;
         }
 
         private byte[]? _cachedBlackRgb888;
@@ -168,5 +282,13 @@ namespace InfoPanel.Services
             _cachedBlackRgb888 ??= new byte[_panelWidth * _panelHeight * 3];
             return _cachedBlackRgb888;
         }
+
+        private readonly record struct RenderedFrame(
+            byte[] Buffer,
+            int Length,
+            long RenderMs,
+            long ResizeMs,
+            long ConvertMs,
+            bool ReturnToPool = true);
     }
 }

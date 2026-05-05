@@ -1375,7 +1375,7 @@
                                                     <StackPanel Margin="0,10,0,0">
                                                         <Slider
                                                             IsSnapToTickEnabled="True"
-                                                            Maximum="5"
+                                                            Maximum="30"
                                                             Minimum="1"
                                                             TickFrequency="1"
                                                             Value="{Binding TargetFrameRate}" />

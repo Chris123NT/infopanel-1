@@ -52,6 +52,13 @@ namespace InfoPanel.Models
         [ObservableProperty]
         private int _targetFrameRate = 1;
 
+        partial void OnTargetFrameRateChanged(int value)
+        {
+            var clamped = Math.Clamp(value, 1, 30);
+            if (value != clamped)
+                TargetFrameRate = clamped;
+        }
+
         [ObservableProperty]
         private int _jpegQuality = 85;
 

@@ -95,6 +95,7 @@ namespace InfoPanel.VmaxPanel
         private IUsbDevice? _wholeUsbDevice;
         private HidStream? _hidStream;
         private DateTime _lastStreamingStatusPolled = DateTime.MinValue;
+        private byte[]? _frameBuffer;
         private bool _loggedFirstFrame;
         private bool _hasSentFrame;
         private bool? _currentScreenSwitch;
@@ -302,21 +303,33 @@ namespace InfoPanel.VmaxPanel
 
         public void SendRgb888Frame(byte[] rgbData)
         {
-            if (_writer == null) throw new InvalidOperationException("VMAX USB device is not open.");
+            SendRgb888Frame(rgbData, rgbData.Length);
+        }
 
-            var frame = new byte[FramePrefix.Length + rgbData.Length + FrameSuffix.Length];
-            Buffer.BlockCopy(FramePrefix, 0, frame, 0, FramePrefix.Length);
-            Buffer.BlockCopy(rgbData, 0, frame, FramePrefix.Length, rgbData.Length);
-            Buffer.BlockCopy(FrameSuffix, 0, frame, FramePrefix.Length + rgbData.Length, FrameSuffix.Length);
+        public void SendRgb888Frame(byte[] rgbData, int rgbDataLength)
+        {
+            if (_writer == null) throw new InvalidOperationException("VMAX USB device is not open.");
+            if (rgbDataLength < 0 || rgbDataLength > rgbData.Length)
+                throw new ArgumentOutOfRangeException(nameof(rgbDataLength));
+
+            var frameLength = FramePrefix.Length + rgbDataLength + FrameSuffix.Length;
+            if (_frameBuffer == null || _frameBuffer.Length != frameLength)
+            {
+                _frameBuffer = new byte[frameLength];
+                Buffer.BlockCopy(FramePrefix, 0, _frameBuffer, 0, FramePrefix.Length);
+                Buffer.BlockCopy(FrameSuffix, 0, _frameBuffer, FramePrefix.Length + rgbDataLength, FrameSuffix.Length);
+            }
+
+            Buffer.BlockCopy(rgbData, 0, _frameBuffer, FramePrefix.Length, rgbDataLength);
 
             var offset = 0;
-            while (offset < frame.Length)
+            while (offset < _frameBuffer.Length)
             {
-                var writeSize = Math.Min(UsbWriteChunkSize, frame.Length - offset);
-                var result = _writer.Write(frame, offset, writeSize, UsbWriteTimeoutMs, out var bytesWritten);
+                var writeSize = Math.Min(UsbWriteChunkSize, _frameBuffer.Length - offset);
+                var result = _writer.Write(_frameBuffer, offset, writeSize, UsbWriteTimeoutMs, out var bytesWritten);
                 if (result != ErrorCode.None || bytesWritten != writeSize)
                 {
-                    throw new InvalidOperationException($"VMAX USB write failed: {result}, wrote {bytesWritten}/{writeSize} bytes at offset {offset}/{frame.Length}.");
+                    throw new InvalidOperationException($"VMAX USB write failed: {result}, wrote {bytesWritten}/{writeSize} bytes at offset {offset}/{_frameBuffer.Length}.");
                 }
 
                 offset += bytesWritten;
@@ -327,11 +340,11 @@ namespace InfoPanel.VmaxPanel
                 _loggedFirstFrame = true;
                 Logger.Information(
                     "VmaxUsbDevice: First RGB888 frame sent. Payload={PayloadLength}, Frame={FrameLength}, Prefix={Prefix}, FirstPixels={FirstPixels}, Suffix={Suffix}",
-                    rgbData.Length,
-                    frame.Length,
-                    BitConverter.ToString(frame.Take(FramePrefix.Length).ToArray()),
-                    BitConverter.ToString(rgbData.Take(24).ToArray()),
-                    BitConverter.ToString(frame.Skip(frame.Length - FrameSuffix.Length).ToArray()));
+                    rgbDataLength,
+                    _frameBuffer.Length,
+                    BitConverter.ToString(_frameBuffer.Take(FramePrefix.Length).ToArray()),
+                    BitConverter.ToString(rgbData.Take(Math.Min(24, rgbDataLength)).ToArray()),
+                    BitConverter.ToString(_frameBuffer.Skip(_frameBuffer.Length - FrameSuffix.Length).ToArray()));
             }
 
             _hasSentFrame = true;
