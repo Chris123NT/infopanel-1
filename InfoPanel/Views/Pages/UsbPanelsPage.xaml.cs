@@ -666,16 +666,6 @@ public partial class UsbPanelsPage : Page
 
         Logger.Information("VmaxPanel Discovery: Found {Count} devices", discoveredDevices.Count);
 
-        if (discoveredDevices.Count == 0)
-        {
-            _snackbarService.Show(
-                "VMAX Display Not Found",
-                "No VID_345F&PID_9132 device was found. Check Device Manager and reconnect the display.",
-                Wpf.Ui.Controls.ControlAppearance.Caution,
-                null,
-                TimeSpan.FromSeconds(6));
-        }
-
         foreach (var discoveredDevice in discoveredDevices)
         {
             ConfigModel.Instance.AccessSettings(settings =>

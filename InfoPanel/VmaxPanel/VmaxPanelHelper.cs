@@ -1,3 +1,4 @@
+using HidSharp;
 using LibUsbDotNet;
 using LibUsbDotNet.Main;
 using Microsoft.Win32;
@@ -93,6 +94,16 @@ namespace InfoPanel.VmaxPanel
             var modelInfo = VmaxPanelModelDatabase.GetModelByVidPid(vendorId, productId);
             if (modelInfo == null) return devices;
 
+            var hidDevices = DeviceList.Local.GetHidDevices(vendorId, productId).ToList();
+            if (hidDevices.Count == 0)
+            {
+                Logger.Information(
+                    "VmaxPanelHelper: Skipping Windows USB registry entries for VID_{VendorId:X4}&PID_{ProductId:X4}; no connected HID control interface was found",
+                    vendorId,
+                    productId);
+                return devices;
+            }
+
             var deviceKeyName = $@"SYSTEM\CurrentControlSet\Enum\USB\VID_{vendorId:X4}&PID_{productId:X4}";
 
             try
@@ -103,6 +114,9 @@ namespace InfoPanel.VmaxPanel
 
                 foreach (var instanceId in deviceKey.GetSubKeyNames())
                 {
+                    if (devices.Count >= hidDevices.Count)
+                        break;
+
                     var deviceId = $@"USB\VID_{vendorId:X4}&PID_{productId:X4}\{instanceId}";
                     if (existingDevices.Any(device => string.Equals(device.DeviceId, deviceId, StringComparison.OrdinalIgnoreCase))
                         || devices.Any(device => string.Equals(device.DeviceId, deviceId, StringComparison.OrdinalIgnoreCase)))
