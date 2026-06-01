@@ -755,10 +755,11 @@ namespace InfoPanel.Services
                 if (sub.HasValue)
                     Logger.Information("ThermalrightPanelDevice {Device}: ChiZhu SUB byte at [28]: 0x{SUB:X2} ({SUBDec})", _device, sub.Value, sub.Value);
 
-                // Try identifier-based detection first (SSCRM-V1/V3/V4, SPISCRM-V2).
-                // Identifier wins over PM+SUB because some panels (e.g. SPISCRM-V2 Elite Vision 360) report
-                // the same PM+SUB as a generic ChiZhu Vision 320x320 but use a different pixel format.
-                // The identifier table is sparse, so unknown identifiers fall through to the PM+SUB lookup.
+                // Three-pass ChiZhu detection. The identifier alone is not unique: SSCRM-V1
+                // firmware ships on both 480x480 (Grand/Hydro/Hyper/Peerless, PM=1/3/4) and
+                // 640x480 (Stream Vision, PM=7). PM+SUB resolves those. Identifier+SUB is only
+                // used to OVERRIDE a wrong PM+SUB entry (e.g. SPISCRM-V2 at PM=0x20 SUB=0x20
+                // overrides the legacy generic ChiZhuVision320x320).
                 string? deviceIdentifier = null;
                 if (bytesRead >= 12)
                 {
@@ -767,22 +768,23 @@ namespace InfoPanel.Services
                     int idLen = Math.Min(16, bytesRead - 4);
                     deviceIdentifier = System.Text.Encoding.ASCII.GetString(responseBuffer, 4, idLen).TrimEnd('\0');
                     Logger.Information("ThermalrightPanelDevice {Device}: Device identifier: {Id}", _device, deviceIdentifier);
+                }
 
-                    if (!string.IsNullOrEmpty(deviceIdentifier))
+                // Pass 1: strict identifier+SUB override (Wonder/Rainbow/Levita SSCRM-V3, SPISCRM-V2)
+                if (!string.IsNullOrEmpty(deviceIdentifier) && sub.HasValue)
+                {
+                    _detectedModel = ThermalrightPanelModelDatabase.GetModelByIdentifierAndSub(deviceIdentifier, sub.Value);
+                    if (_detectedModel != null)
                     {
-                        _detectedModel = ThermalrightPanelModelDatabase.GetModelByIdentifier(deviceIdentifier, sub);
-                        if (_detectedModel != null)
-                        {
-                            _panelWidth = _detectedModel.RenderWidth;
-                            _panelHeight = _detectedModel.RenderHeight;
-                            _device.Model = _detectedModel.Model;
-                            Logger.Information("ThermalrightPanelDevice {Device}: Identifier {Id} -> {Model} ({Width}x{Height})",
-                                _device, deviceIdentifier, _detectedModel.Name, _panelWidth, _panelHeight);
-                        }
+                        _panelWidth = _detectedModel.RenderWidth;
+                        _panelHeight = _detectedModel.RenderHeight;
+                        _device.Model = _detectedModel.Model;
+                        Logger.Information("ThermalrightPanelDevice {Device}: Identifier {Id}+SUB 0x{SUB:X2} -> {Model} ({Width}x{Height})",
+                            _device, deviceIdentifier, sub.Value, _detectedModel.Name, _panelWidth, _panelHeight);
                     }
                 }
 
-                // Fall back to ChiZhu PM+SUB table (covers ~35 SSCRM bulk models without a known identifier)
+                // Pass 2: PM+SUB table (covers most ChiZhu panels by hardware variant)
                 if (_detectedModel == null && pm.HasValue && sub.HasValue)
                 {
                     var chizhuModel = ThermalrightPanelModelDatabase.GetModelByChiZhuPM(pm.Value, sub.Value);
@@ -795,7 +797,22 @@ namespace InfoPanel.Services
                         Logger.Information("ThermalrightPanelDevice {Device}: ChiZhu PM 0x{PM:X2} sub 0x{SUB:X2} -> {Model} ({Width}x{Height})",
                             _device, pm.Value, sub.Value, chizhuModel.Name, _panelWidth, _panelHeight);
                     }
-                    else if (!string.IsNullOrEmpty(deviceIdentifier))
+                }
+
+                // Pass 3: identifier-only catch-all for legacy panels not in the PM+SUB switch
+                // (e.g. PM=1 SUB=0 Grand Vision: identifier SSCRM-V1 routes to the 480x480 entry).
+                if (_detectedModel == null && !string.IsNullOrEmpty(deviceIdentifier))
+                {
+                    _detectedModel = ThermalrightPanelModelDatabase.GetModelByIdentifier(deviceIdentifier);
+                    if (_detectedModel != null)
+                    {
+                        _panelWidth = _detectedModel.RenderWidth;
+                        _panelHeight = _detectedModel.RenderHeight;
+                        _device.Model = _detectedModel.Model;
+                        Logger.Information("ThermalrightPanelDevice {Device}: Identifier {Id} (fallback) -> {Model} ({Width}x{Height})",
+                            _device, deviceIdentifier, _detectedModel.Name, _panelWidth, _panelHeight);
+                    }
+                    else
                     {
                         Logger.Warning("ThermalrightPanelDevice {Device}: Unknown identifier '{Id}' and no PM+SUB match, using default {Width}x{Height}",
                             _device, deviceIdentifier, _panelWidth, _panelHeight);

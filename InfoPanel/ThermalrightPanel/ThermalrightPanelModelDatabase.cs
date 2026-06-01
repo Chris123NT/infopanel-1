@@ -479,7 +479,9 @@ namespace InfoPanel.ThermalrightPanel
                 VendorId = THERMALRIGHT_VENDOR_ID,
                 ProductId = THERMALRIGHT_PRODUCT_ID,
                 ProtocolType = ThermalrightProtocolType.ChiZhu,
-                PixelFormat = ThermalrightPixelFormat.Rgb565BigEndian
+                PixelFormat = ThermalrightPixelFormat.Rgb565BigEndian,
+                SubByte = 0x20  // Required for the strict identifier+SUB lookup to win over the
+                                // generic PM=0x20 ChiZhuVision320x320 PM+SUB entry.
             },
             [ThermalrightPanelModel.EliteVisionScsi] = new ThermalrightPanelModelInfo
             {
@@ -972,23 +974,34 @@ namespace InfoPanel.ThermalrightPanel
         }
 
         /// <summary>
-        /// Get model info by device identifier string (e.g., "SSCRM-V1", "SSCRM-V3", "SSCRM-V4")
-        /// and optional SUB byte for disambiguation (e.g., SSCRM-V3 + SUB=0x01 = Wonder, SUB=0x02 = Rainbow).
+        /// Strict identifier+SUB lookup: only returns entries whose DeviceIdentifier matches AND
+        /// whose SubByte equals the device's SUB. Used as the first detection pass for ChiZhu
+        /// devices where the identifier alone isn't enough (e.g. SSCRM-V1 firmware ships on
+        /// both 480x480 Grand-family and 640x480 Stream Vision; only PM byte distinguishes them).
+        /// </summary>
+        public static ThermalrightPanelModelInfo? GetModelByIdentifierAndSub(string identifier, byte subByte)
+        {
+            foreach (var model in Models.Values)
+            {
+                if (model.DeviceIdentifier == identifier && model.SubByte.HasValue && model.SubByte.Value == subByte)
+                    return model;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Identifier-only fallback for legacy panels not covered by the PM+SUB switch
+        /// (e.g. PM=1 SUB=0 Grand Vision is not in GetModelByChiZhuPM). First match wins.
+        /// Callers should attempt PM+SUB first; only fall back to this when PM+SUB returns null.
         /// </summary>
         public static ThermalrightPanelModelInfo? GetModelByIdentifier(string identifier, byte? subByte = null)
         {
-            // If SUB byte provided, try exact match first (identifier + SUB)
             if (subByte.HasValue)
             {
-                foreach (var model in Models.Values)
-                {
-                    if (model.DeviceIdentifier == identifier && model.SubByte.HasValue && model.SubByte.Value == subByte.Value)
-                        return model;
-                }
+                var strict = GetModelByIdentifierAndSub(identifier, subByte.Value);
+                if (strict != null) return strict;
             }
 
-            // Fallback: match by identifier only (first match wins — for unique identifiers like V1/V4,
-            // or when SUB byte is unknown/not in database)
             foreach (var model in Models.Values)
             {
                 if (model.DeviceIdentifier == identifier)
