@@ -107,6 +107,12 @@
       "name": "OBS Monitor",
       "description": "Plugin that displays currently OBS status",
       "category": "monitoring"
+    },
+    {
+      "repo": "1ZeeN/InfoPanel.EasyBluetooth",
+      "name": "InfoPanel.EasyBluetooth",
+      "description": "Battery and Status from mouses using Easy Bluetooth Unified Standard Data API",
+      "category": "monitoring"
     }
   ]
 }
