@@ -13,7 +13,12 @@ namespace InfoPanel.JonsboPanel
         public int VendorId { get; init; }
         public int ProductId { get; init; }
 
-        /// <summary>Soft cap on JPEG payload size in bytes (OEM app streams ~120 KB frames).</summary>
+        public JonsboTransportType TransportType { get; init; } = JonsboTransportType.Serial;
+
+        /// <summary>CEA/custom VIC for MS9132 mode-set (171 = 376x960 on the DS339).</summary>
+        public byte Vic { get; init; }
+
+        /// <summary>Soft cap on JPEG payload size in bytes (OEM app streams ~120 KB frames). Serial transport only.</summary>
         public int MaxJpegBytes { get; init; } = 256 * 1024;
 
         public int DefaultFrameRate { get; init; } = 25;

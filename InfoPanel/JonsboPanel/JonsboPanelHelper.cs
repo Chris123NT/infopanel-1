@@ -22,7 +22,8 @@ namespace InfoPanel.JonsboPanel
         private static readonly ILogger Logger = Log.ForContext(typeof(JonsboPanelHelper));
 
         /// <summary>
-        /// Scans Win32_SerialPort for CDC-ACM devices matching Jonsbo VID/PID.
+        /// Scans for Jonsbo panels: HLVMAX serial devices via Win32_SerialPort, and
+        /// MacroSilicon MS9132 USB displays (DS339) via their HID control interface.
         /// </summary>
         public static List<JonsboPanelDiscoveryInfo> ScanDevices()
         {
@@ -59,6 +60,40 @@ namespace InfoPanel.JonsboPanel
             catch (Exception ex)
             {
                 Logger.Error(ex, "JonsboPanelHelper: Error scanning serial ports");
+            }
+
+            // MS9132-based panels (DS339): presence-detect via the HID control interface,
+            // which binds to the inbox HID driver regardless of the video-interface driver.
+            try
+            {
+                foreach (var hid in HidSharp.DeviceList.Local.GetHidDevices(
+                    JonsboPanelModelDatabase.MS9132_VENDOR_ID, JonsboPanelModelDatabase.MS9132_PRODUCT_ID))
+                {
+                    var modelInfo = JonsboPanelModelDatabase.Models[JonsboPanelModel.DS339];
+
+                    string serial = "";
+                    try { serial = hid.GetSerialNumber(); } catch { }
+
+                    string deviceId = $"USB\\VID_{JonsboPanelModelDatabase.MS9132_VENDOR_ID:X4}&PID_{JonsboPanelModelDatabase.MS9132_PRODUCT_ID:X4}\\{serial}";
+
+                    Logger.Information("JonsboPanelHelper: Found {Name} (MS9132, serial {Serial})",
+                        modelInfo.Name, serial);
+
+                    devices.Add(new JonsboPanelDiscoveryInfo
+                    {
+                        DeviceId = deviceId,
+                        DeviceLocation = string.IsNullOrEmpty(serial) ? "MS9132" : serial,
+                        VendorId = JonsboPanelModelDatabase.MS9132_VENDOR_ID,
+                        ProductId = JonsboPanelModelDatabase.MS9132_PRODUCT_ID,
+                        Model = modelInfo.Model,
+                        ModelInfo = modelInfo,
+                    });
+                    break; // one MS9132 device supported per scan for now
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "JonsboPanelHelper: Error scanning MS9132 devices");
             }
 
             Logger.Information("JonsboPanelHelper: Found {Count} Jonsbo panel device(s)", devices.Count);

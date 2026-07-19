@@ -40,6 +40,12 @@ namespace InfoPanel.Services
             _device.UpdateRuntimeProperties(isRunning: false, errorMessage: string.Empty);
             _device.RuntimeProperties.Name = $"{modelInfo.Name} ({_panelWidth}x{_panelHeight})";
 
+            if (modelInfo.TransportType == JonsboTransportType.Ms9132)
+            {
+                await DoMs9132WorkAsync(modelInfo, token);
+                return;
+            }
+
             int retryCount = 0;
             while (!token.IsCancellationRequested)
             {
@@ -282,6 +288,144 @@ namespace InfoPanel.Services
             using var data = image.Encode(SKEncodedImageFormat.Jpeg, 50);
             _cachedBlackJpeg = data.ToArray();
             return _cachedBlackJpeg;
+        }
+
+        // ==================== MS9132 transport (DS339) ====================
+
+        private async Task DoMs9132WorkAsync(JonsboPanelModelInfo modelInfo, CancellationToken token)
+        {
+            int retryCount = 0;
+            while (!token.IsCancellationRequested)
+            {
+                JonsboMs9132Device? ms = null;
+                try
+                {
+                    Logger.Information("JonsboDevice {Device}: Opening MS9132 (attempt {Retry})", _device, retryCount + 1);
+                    ms = JonsboMs9132Device.Open();
+
+                    if (ms == null)
+                    {
+                        _device.UpdateRuntimeProperties(errorMessage: "Cannot open MS9132 (video interface driver missing?)");
+                        await Task.Delay(retryCount < 3 ? 1000 : 5000, token);
+                        retryCount++;
+                        continue;
+                    }
+
+                    if (!ms.IsPanelConnected())
+                    {
+                        Logger.Warning("JonsboDevice {Device}: MS9132 reports no panel connected (reg 0x32)", _device);
+                        // Continue anyway — some firmware revisions may not report status.
+                    }
+
+                    ms.SetMode(_panelWidth, _panelHeight, modelInfo.Vic);
+                    _device.RuntimeProperties.Name = $"{modelInfo.Name} ({_panelWidth}x{_panelHeight})";
+                    _device.UpdateRuntimeProperties(isRunning: true, errorMessage: string.Empty);
+
+                    retryCount = 0;
+                    await RunMs9132RenderSendLoop(ms, token);
+                }
+                catch (OperationCanceledException) { break; }
+                catch (Exception ex)
+                {
+                    Logger.Error(ex, "JonsboDevice {Device}: MS9132 error", _device);
+                    _device.UpdateRuntimeProperties(errorMessage: ex.Message);
+                    retryCount++;
+                }
+                finally
+                {
+                    ms?.Dispose();
+                    _device.UpdateRuntimeProperties(isRunning: false);
+                }
+
+                if (!token.IsCancellationRequested)
+                    await Task.Delay(retryCount < 3 ? 1000 : 5000, token);
+            }
+        }
+
+        private async Task RunMs9132RenderSendLoop(JonsboMs9132Device ms, CancellationToken token)
+        {
+            FpsCounter fpsCounter = new(60);
+            var stopwatch = new Stopwatch();
+            byte[]? bgrBuffer = null;
+
+            while (!token.IsCancellationRequested)
+            {
+                stopwatch.Restart();
+
+                GenerateBgrFrame(ref bgrBuffer);
+                ms.SendFrame(bgrBuffer!, _panelWidth, _panelHeight);
+
+                fpsCounter.Update(stopwatch.ElapsedMilliseconds);
+                _device.UpdateRuntimeProperties(frameRate: fpsCounter.FramesPerSecond, frameTime: fpsCounter.FrameTime);
+
+                var targetFrameTime = 1000 / Math.Max(1, _device.TargetFrameRate);
+                var remaining = targetFrameTime - (int)stopwatch.ElapsedMilliseconds;
+                if (remaining > 0) await Task.Delay(remaining, token);
+            }
+        }
+
+        /// <summary>
+        /// Renders the profile and converts to BGR888 at the panel's native portrait
+        /// resolution, reusing <paramref name="bgrBuffer"/> across frames.
+        /// </summary>
+        private void GenerateBgrFrame(ref byte[]? bgrBuffer)
+        {
+            int pixelCount = _panelWidth * _panelHeight;
+            bgrBuffer ??= new byte[pixelCount * 3];
+
+            SKBitmap? rendered = null;
+            try
+            {
+                if (ConfigModel.Instance.GetProfile(_device.ProfileGuid) is Profile profile)
+                {
+                    using var bitmap = PanelDrawTask.RenderSK(profile, false,
+                        colorType: SKColorType.Rgba8888,
+                        alphaType: SKAlphaType.Opaque);
+                    rendered = SKBitmapExtensions.EnsureBitmapSize(bitmap, _panelWidth, _panelHeight, _device.Rotation);
+                }
+                else
+                {
+                    rendered = new SKBitmap(_panelWidth, _panelHeight, SKColorType.Rgba8888, SKAlphaType.Opaque);
+                    rendered.Erase(SKColors.Black);
+                }
+
+                float scale = Math.Clamp(_device.Brightness, 0, 100) / 100f;
+                bool dim = scale < 1f;
+
+                unsafe
+                {
+                    byte* src = (byte*)rendered.GetPixels().ToPointer();
+                    int srcRowBytes = rendered.RowBytes;
+                    fixed (byte* dstBase = bgrBuffer)
+                    {
+                        byte* dst = dstBase;
+                        for (int y = 0; y < _panelHeight; y++)
+                        {
+                            byte* row = src + y * srcRowBytes;
+                            for (int x = 0; x < _panelWidth; x++)
+                            {
+                                byte r = row[x * 4];      // Rgba8888: R,G,B,A
+                                byte g = row[x * 4 + 1];
+                                byte b = row[x * 4 + 2];
+                                if (dim)
+                                {
+                                    r = (byte)(r * scale);
+                                    g = (byte)(g * scale);
+                                    b = (byte)(b * scale);
+                                }
+                                // Wire format is BGR888 (DRM_FORMAT_RGB888 memory order)
+                                *dst++ = b;
+                                *dst++ = g;
+                                *dst++ = r;
+                            }
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                rendered?.Dispose();
+            }
         }
     }
 }
