@@ -6,6 +6,7 @@ using InfoPanel.ThermalrightPanel;
 using InfoPanel.ThermaltakePanel;
 using InfoPanel.JlPanel;
 using InfoPanel.JonsboPanel;
+using InfoPanel.VmaxPanel;
 using InfoPanel.ViewModels;
 using InfoPanel.Views.Windows;
 using LibUsbDotNet;
@@ -809,5 +810,88 @@ public partial class UsbPanelsPage : Page
             });
         }
     }
+
+
+    // === VMAX Panel ===
+
+    private async void ButtonDiscoverVmaxPanelDevices_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button button)
+        {
+            button.IsEnabled = false;
+            await UpdateVmaxPanelDeviceList();
+            button.IsEnabled = true;
+        }
+    }
+
+    private Task UpdateVmaxPanelDeviceList()
+    {
+        var discoveredDevices = VmaxPanelHelper.ScanDevices();
+
+        Logger.Information("VmaxPanel Discovery: Found {Count} devices", discoveredDevices.Count);
+
+        foreach (var discoveredDevice in discoveredDevices)
+        {
+            ConfigModel.Instance.AccessSettings(settings =>
+            {
+                var device = settings.VmaxPanelDevices.FirstOrDefault(d =>
+                    d.IsMatching(discoveredDevice.DeviceId, discoveredDevice.DeviceLocation, discoveredDevice.Model));
+
+                if (device == null)
+                {
+                    var newDevice = new VmaxPanelDevice()
+                    {
+                        DeviceId = discoveredDevice.DeviceId,
+                        DeviceLocation = discoveredDevice.DeviceLocation,
+                        Model = discoveredDevice.Model,
+                        ProfileGuid = ConfigModel.Instance.Profiles.FirstOrDefault()?.Guid ?? Guid.Empty
+                    };
+
+                    if (discoveredDevice.ModelInfo != null)
+                    {
+                        newDevice.RuntimeProperties.Name = discoveredDevice.ModelInfo.Name;
+                    }
+
+                    settings.VmaxPanelDevices.Add(newDevice);
+                    Logger.Information("VmaxPanel Discovery: Added new device '{DeviceId}'", discoveredDevice.DeviceId);
+                }
+                else
+                {
+                    device.DeviceLocation = discoveredDevice.DeviceLocation;
+
+                    if (device.ModelInfo != null)
+                    {
+                        device.RuntimeProperties.Name = device.ModelInfo.Name;
+                    }
+
+                    Logger.Information("VmaxPanel Discovery: Device '{DeviceId}' already exists", discoveredDevice.DeviceId);
+                }
+            });
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void ButtonRemoveVmaxPanelDevice_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button button && button.Tag is VmaxPanelDevice runtimeDevice)
+        {
+            ConfigModel.Instance.AccessSettings(settings =>
+            {
+                var deviceConfig = settings.VmaxPanelDevices.FirstOrDefault(c => c.Id == runtimeDevice.Id);
+
+                if (deviceConfig != null)
+                {
+                    if (VmaxPanelTask.Instance.IsDeviceRunning(deviceConfig.Id))
+                    {
+                        _ = VmaxPanelTask.Instance.StopDevice(deviceConfig.Id);
+                    }
+
+                    settings.VmaxPanelDevices.Remove(deviceConfig);
+                }
+            });
+        }
+    }
+
 
 }

@@ -114,6 +114,16 @@ namespace InfoPanel.Models
         [ObservableProperty]
         private bool _jonsboPanelMultiDeviceMode = false;
 
+        private readonly ObservableCollection<VmaxPanelDevice> _vmaxPanelDevices = [];
+
+        public ObservableCollection<VmaxPanelDevice> VmaxPanelDevices
+        {
+            get { return _vmaxPanelDevices; }
+        }
+
+        [ObservableProperty]
+        private bool _vmaxPanelMultiDeviceMode = false;
+
         private readonly ObservableCollection<HotkeyBinding> _hotkeyBindings = [];
 
         public ObservableCollection<HotkeyBinding> HotkeyBindings
@@ -182,6 +192,7 @@ namespace InfoPanel.Models
             ThermaltakePanelDevices.CollectionChanged += ThermaltakePanelDevices_CollectionChanged;
             JlPanelDevices.CollectionChanged += JlPanelDevices_CollectionChanged;
             JonsboPanelDevices.CollectionChanged += JonsboPanelDevices_CollectionChanged;
+            VmaxPanelDevices.CollectionChanged += VmaxPanelDevices_CollectionChanged;
         }
 
         private void BeadaPanelDevices_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -316,6 +327,27 @@ namespace InfoPanel.Models
         {
             if (e.PropertyName != nameof(JonsboPanelDevice.RuntimeProperties))
                 OnPropertyChanged(nameof(JonsboPanelDevices));
+        }
+
+        private void VmaxPanelDevices_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (e.OldItems != null)
+            {
+                foreach (VmaxPanelDevice device in e.OldItems)
+                    device.PropertyChanged -= VmaxDevice_PropertyChanged;
+            }
+            if (e.NewItems != null)
+            {
+                foreach (VmaxPanelDevice device in e.NewItems)
+                    device.PropertyChanged += VmaxDevice_PropertyChanged;
+            }
+            OnPropertyChanged(nameof(VmaxPanelDevices));
+        }
+
+        private void VmaxDevice_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName != nameof(VmaxPanelDevice.RuntimeProperties))
+                OnPropertyChanged(nameof(VmaxPanelDevices));
         }
 
     }
