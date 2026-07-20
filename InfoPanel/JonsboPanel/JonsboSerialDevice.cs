@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 namespace InfoPanel.JonsboPanel
 {
     /// <summary>
-    /// Serial communication for Jonsbo AIO displays (DS916 family, "HLVMAX" firmware).
+    /// Serial communication for Jonsbo displays (DS916 family, "HLVMAX" firmware).
     /// Protocol (reverse-engineered from the OEM JONSBO-AIO app + USB capture):
     ///   * USB CDC ACM virtual COM port. Line coding is ignored by the firmware —
     ///     the OEM app opens at 9600 baud and streams ~120 KB frames regardless.

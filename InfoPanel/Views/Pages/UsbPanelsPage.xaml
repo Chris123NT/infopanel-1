@@ -1499,7 +1499,7 @@
         </ui:CardExpander>
         <!--  end JlPanel Multi-Device settings  -->
 
-        <!--  JonsboPanel Multi-Device settings (Jonsbo AIO displays, HLVMAX firmware)  -->
+        <!--  JonsboPanel Multi-Device settings (Jonsbo displays)  -->
         <ui:CardExpander
             Margin="0,10,0,0"
             IsExpanded="True">
@@ -1521,7 +1521,7 @@
                             Margin="0,5,0,0"
                             FontSize="12"
                             Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                            Text="Jonsbo DS916, DS339, and other Jonsbo AIO displays." />
+                            Text="Jonsbo DS916, DS339, and other Jonsbo displays." />
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">

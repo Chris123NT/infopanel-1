@@ -4,7 +4,7 @@ using System.Linq;
 namespace InfoPanel.JonsboPanel
 {
     /// <summary>
-    /// Jonsbo AIO cooler displays ("HLVMAX" / Artinchip family).
+    /// Jonsbo displays ("HLVMAX" / Artinchip family).
     /// Reference platform: Jonsbo DS916 (9.16", 462x1920 native portrait).
     /// Transport is USB CDC ACM (virtual COM port); the line coding is ignored by the
     /// firmware — frames are plain bulk writes. Protocol reverse-engineered from the
