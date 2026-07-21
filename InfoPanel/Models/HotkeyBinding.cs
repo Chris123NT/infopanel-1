@@ -16,7 +16,7 @@ namespace InfoPanel.Models
         private Key _key = Key.None;
 
         /// <summary>
-        /// Device type: "Beada", "Turing", or "Thermalright"
+        /// Device type: "Beada", "Turing", "LianLi", or "Thermalright"
         /// </summary>
         [ObservableProperty]
         private string _deviceType = string.Empty;
@@ -86,6 +86,10 @@ namespace InfoPanel.Models
                         })
                         .FirstOrDefault() ?? DeviceId,
                     "Turing" => ConfigModel.Instance.Settings.TuringPanelDevices
+                        .Where(d => d.DeviceId == DeviceId)
+                        .Select(d => d.Name ?? d.DeviceId)
+                        .FirstOrDefault() ?? DeviceId,
+                    "LianLi" => ConfigModel.Instance.Settings.LianLiPanelDevices
                         .Where(d => d.DeviceId == DeviceId)
                         .Select(d => d.Name ?? d.DeviceId)
                         .FirstOrDefault() ?? DeviceId,
