@@ -45,8 +45,11 @@ namespace InfoPanel.Monitors
                 var stopwatch = new Stopwatch();
                 stopwatch.Start();
 
-                StorageDevice.ThrottleInterval = TimeSpan.FromSeconds(
-                    ConfigModel.Instance.Settings.LibreHardwareMonitorStorageInterval);
+                // LHM 0.9.7 replaced StorageDevice.ThrottleInterval (TimeSpan) with
+                // SmartUpdateCycleCount (SMART data refreshes every N update cycles).
+                // Our update loop runs every 2 seconds, so convert the seconds setting to cycles.
+                StorageDevice.SmartUpdateCycleCount = (uint)Math.Max(1,
+                    ConfigModel.Instance.Settings.LibreHardwareMonitorStorageInterval / 2);
 
                 Computer computer = new()
                 {
